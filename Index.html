@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>RDSK STUDIO - 3v3 Retro FPS</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Courier New', monospace;
+            user-select: none;
+        }
+        canvas {
+            border: 3px solid #00f0ff;
+            box-shadow: 0 0 25px rgba(0, 240, 255, 0.3);
+            cursor: crosshair;
+        }
+        #hud {
+            position: absolute;
+            top: 15px;
+            background: rgba(0, 0, 0, 0.75);
+            padding: 8px 18px;
+            border: 1px solid #ff0055;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 10;
+        }
+        #avisoClick {
+            position: absolute;
+            bottom: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 6px 14px;
+            border: 1px solid #fff;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="hud">
+        HP: <span id="txtHp" style="color:#0f0;">100</span> | 
+        TIME: <span id="txtTime">CONECTANDO...</span> | 
+        <span id="txtLog" style="color:#ff0;"></span>
+    </div>
+    <canvas id="tela" width="800" height="500"></canvas>
+    <div id="avisoClick">Clique na tela para travar o mouse | WASD: Mover | Mouse/Setas: Girar | Clique: Atirar</div>
+
+    <!-- Puxando os Scripts da pasta Scripts -->
+    <script src="Scripts/dano.js"></script>
+    <script src="Scripts/assetsLoader.js"></script>
+
+    <script>
+        const canvas = document.getElementById('tela');
+        const ctx = canvas.getContext('2d');
+        const socket = new WebSocket('wss://rdsk-2.onrender.com/');
+
+        let mapa = [
+            [1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,1,0,0,0,0,1,1,0,1],
+            [1,0,1,0,0,0,0,0,0,1,0,1],
+            [1,0,0,0,0,1,1,0,0,0,0,1],
+            [1,0,0,0,0,1,1,0,0,0,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,1,0,0,0,0,0,0,1,0,1],
+            [1,0,1,1,0,0,0,0,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,1],
+            [1,0,0,0,0,0,0,0,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+
+        let meuId = null;
+        let meuTime = null;
+        let jogador = { x: 1.5, y: 1.5, angulo: 0, hp: 100 };
+        let outrosJogadores = {};
+        let efeitoTiro = 0;
+
+        const teclas = {};
+        window.addEventListener('keydown', e => teclas[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => teclas[e.key.toLowerCase()] = false);
+
+        canvas.addEventListener('click', () => {
+            if (document.pointerLockElement !== canvas) {
+                canvas.requestPointerLock();
+            } else {
+                disparar();
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === canvas) {
+                jogador.angulo += e.movementX * 0.003;
+            }
+        });
+
+        function disparar() {
+            if (!meuId || jogador.hp <= 0) return;
+
+            tocarSom('tiro');
+            efeitoTiro = 5;
+
+            socket.send(JSON.stringify({ tipo: 'atirar' }));
+
+            const distParede = lancarRaio(jogador.x, jogador.y, jogador.angulo).distancia;
+
+            for (let id in outrosJogadores) {
+                if (id === meuId) continue;
+                let alvo = outrosJogadores[id];
+                if (alvo.time === meuTime || alvo.hp <= 0) continue;
+
+                let dx = alvo.x - jogador.x;
+                let dy = alvo.y - jogador.y;
+                let distAlvo = Math.hypot(dx, dy);
+
+                if (distAlvo < distParede) {
+                    let anguloAlvo = Math.atan2(dy, dx);
+                    let diff = normalizarAngulo(anguloAlvo - jogador.angulo);
+                    let margemAcerto = 0.25 / distAlvo;
+
+                    if (Math.abs(diff) < margemAcerto) {
+                        let isHeadshot = Math.abs(diff) < (margemAcerto * 0.35);
+                        socket.send(JSON.stringify({
+                            tipo: 'acerto',
+                            alvoId: id,
+                            headshot: isHeadshot
+                        }));
+                        break;
+                    }
+                }
+            }
+        }
+
+        function normalizarAngulo(a) {
+            while (a > Math.PI) a -= Math.PI * 2;
+            while (a < -Math.PI) a += Math.PI * 2;
+            return a;
+        }
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.tipo === 'init') {
+                meuId = data.seuId;
+                meuTime = data.seuTime;
+                mapa = data.mapa;
+                outrosJogadores = data.jogadores;
+                jogador.x = outrosJogadores[meuId].x;
+                jogador.y = outrosJogadores[meuId].y;
+                jogador.angulo = outrosJogadores[meuId].angulo;
+
+                const elTime = document.getElementById('txtTime');
+                elTime.innerText = meuTime.toUpperCase();
+                elTime.style.color = meuTime === 'azul' ? '#00f0ff' : '#ff3333';
+            }
+
+            if (data.tipo === 'novoJogador') {
+                outrosJogadores[data.jogador.id] = data.jogador;
+            }
+
+            if (data.tipo === 'movimento' && outrosJogadores[data.id]) {
+                outrosJogadores[data.id].x = data.x;
+                outrosJogadores[data.id].y = data.y;
+                outrosJogadores[data.id].angulo = data.angulo;
+                if (data.andando) {
+                    tocarSom('passos');
+                }
+            }
+
+            if (data.tipo === 'tiroCriado') {
+                tocarSom('tiro');
+            }
+
+            if (data.tipo === 'danoAplicado') {
+                if (outrosJogadores[data.alvoId]) {
+                    outrosJogadores[data.alvoId].hp = data.hpRestante;
+                }
+                if (data.alvoId === meuId) {
+                    jogador.hp = data.hpRestante;
+                    document.getElementById('txtHp').innerText = jogador.hp;
+                    document.getElementById('txtHp').style.color = jogador.hp > 30 ? '#0f0' : '#f00';
+                    tocarSom('acerto');
+                }
+                if (data.atiradorId === meuId) {
+                    tocarSom('acerto');
+                    const log = document.getElementById('txtLog');
+                    log.innerText = data.headshot ? `HEADSHOT! -${data.dano}` : `ACERTO! -${data.dano}`;
+                    setTimeout(() => log.innerText = '', 1200);
+                }
+            }
+
+            if (data.tipo === 'respawn') {
+                if (data.jogador.id === meuId) {
+                    jogador.x = data.jogador.x;
+                    jogador.y = data.jogador.y;
+                    jogador.hp = 100;
+                    document.getElementById('txtHp').innerText = 100;
+                    document.getElementById('txtHp').style.color = '#0f0';
+                } else if (outrosJogadores[data.jogador.id]) {
+                    outrosJogadores[data.jogador.id] = data.jogador;
+                }
+            }
+
+            if (data.tipo === 'desconectou') {
+                delete outrosJogadores[data.id];
+            }
+        };
+
+        function atualizar() {
+            if (!meuId || jogador.hp <= 0) return;
+
+            const vel = 0.06;
+            const rotVel = 0.04;
+            let dx = 0, dy = 0, andou = false;
+
+            if (teclas['arrowleft']) jogador.angulo -= rotVel;
+            if (teclas['arrowright']) jogador.angulo += rotVel;
+
+            if (teclas['w']) { dx += Math.cos(jogador.angulo) * vel; dy += Math.sin(jogador.angulo) * vel; andou = true; }
+            if (teclas['s']) { dx -= Math.cos(jogador.angulo) * vel; dy -= Math.sin(jogador.angulo) * vel; andou = true; }
+            if (teclas['a']) { dx += Math.sin(jogador.angulo) * vel; dy -= Math.cos(jogador.angulo) * vel; andou = true; }
+            if (teclas['d']) { dx -= Math.sin(jogador.angulo) * vel; dy += Math.cos(jogador.angulo) * vel; andou = true; }
+
+            let margem = 0.2;
+            if (mapa[Math.floor(jogador.y)][Math.floor(jogador.x + dx + (dx > 0 ? margem : -margem))] === 0) {
+                jogador.x += dx;
+            }
+            if (mapa[Math.floor(jogador.y + dy + (dy > 0 ? margem : -margem))][Math.floor(jogador.x)] === 0) {
+                jogador.y += dy;
+            }
+
+            if (andou) {
+                tocarSom('passos');
+                socket.send(JSON.stringify({
+                    tipo: 'mover',
+                    x: jogador.x,
+                    y: jogador.y,
+                    angulo: jogador.angulo,
+                    andando: true
+                }));
+            }
+
+            if (efeitoTiro > 0) efeitoTiro--;
+        }
+
+        function lancarRaio(x0, y0, angulo) {
+            const passo = 0.02;
+            let dist = 0;
+            while (dist < 20) {
+                dist += passo;
+                let rx = x0 + Math.cos(angulo) * dist;
+                let ry = y0 + Math.sin(angulo) * dist;
+                let mx = Math.floor(rx);
+                let my = Math.floor(ry);
+
+                if (my < 0 || my >= mapa.length || mx < 0 || mx >= mapa[0].length || mapa[my][mx] === 1) {
+                    let hitX = rx - mx;
+                    let hitY = ry - my;
+                    let texU = (Math.abs(hitX - 0.5) > Math.abs(hitY - 0.5)) ? hitY : hitX;
+                    return { distancia: dist, texU: texU };
+                }
+            }
+            return { distancia: 20, texU: 0 };
+        }
+
+        function renderizar() {
+            const W = canvas.width;
+            const H = canvas.height;
+            const FOV = Math.PI / 3;
+            const numRaios = 200;
+            const larguraFatia = W / numRaios;
+            let zBuffer = [];
+
+            ctx.fillStyle = '#0d0d12';
+            ctx.fillRect(0, 0, W, H / 2);
+
+            if (Assets.imagens.chao.complete && Assets.imagens.chao.naturalWidth !== 0) {
+                ctx.drawImage(Assets.imagens.chao, 0, H / 2, W, H / 2);
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+                ctx.fillRect(0, H / 2, W, H / 2);
+            } else {
+                ctx.fillStyle = '#1f1f24';
+                ctx.fillRect(0, H / 2, W, H / 2);
+            }
+
+            const imgParede = Assets.imagens.parede;
+            const temTexturaParede = imgParede.complete && imgParede.naturalWidth !== 0;
+
+            for (let i = 0; i < numRaios; i++) {
+                let raioAngulo = (jogador.angulo - FOV / 2) + (i / numRaios) * FOV;
+                let hit = lancarRaio(jogador.x, jogador.y, raioAngulo);
+                let distCorrigida = hit.distancia * Math.cos(raioAngulo - jogador.angulo);
+                zBuffer[i] = distCorrigida;
+
+                let alturaParede = Math.min(H * 1.5, H / distCorrigida);
+                let yTopo = (H - alturaParede) / 2;
+
+                if (temTexturaParede) {
+                    let sx = Math.floor(hit.texU * imgParede.naturalWidth);
+                    ctx.drawImage(imgParede, sx, 0, 1, imgParede.naturalHeight, i * larguraFatia, yTopo, larguraFatia + 1, alturaParede);
+                    let sombra = Math.min(0.85, distCorrigida / 14);
+                    ctx.fillStyle = `rgba(0,0,0,${sombra})`;
+                    ctx.fillRect(i * larguraFatia, yTopo, larguraFatia + 1, alturaParede);
+                } else {
+                    let brilho = Math.max(30, 220 - distCorrigida * 18);
+                    ctx.fillStyle = `rgb(0, ${brilho}, ${brilho})`;
+                    ctx.fillRect(i * larguraFatia, yTopo, larguraFatia + 1, alturaParede);
+                }
+            }
+
+            let sprites = [];
+            for (let id in outrosJogadores) {
+                if (id === meuId || outrosJogadores[id].hp <= 0) continue;
+                let p = outrosJogadores[id];
+                let dist = Math.hypot(p.x - jogador.x, p.y - jogador.y);
+                sprites.push({ ...p, dist });
+            }
+            sprites.sort((a, b) => b.dist - a.dist);
+
+            for (let s of sprites) {
+                let dx = s.x - jogador.x;
+                let dy = s.y - jogador.y;
+                let anguloSprite = normalizarAngulo(Math.atan2(dy, dx) - jogador.angulo);
+
+                if (Math.abs(anguloSprite) < FOV * 0.7) {
+                    let telaX = (0.5 * (anguloSprite / (FOV / 2)) + 0.5) * W;
+                    let alturaSprite = H / s.dist;
+                    let larguraSprite = alturaSprite * 0.5;
+                    let raioIdx = Math.floor(telaX / larguraFatia);
+
+                    if (raioIdx >= 0 && raioIdx < numRaios && s.dist < zBuffer[raioIdx]) {
+                        let yTop = (H - alturaSprite) / 2;
+                        ctx.fillStyle = s.time === 'azul' ? '#00f0ff' : '#ff2244';
+                        ctx.fillRect(telaX - larguraSprite / 2, yTop + alturaSprite * 0.2, larguraSprite, alturaSprite * 0.8);
+                        ctx.fillStyle = '#ffcc99';
+                        ctx.fillRect(telaX - larguraSprite * 0.25, yTop, larguraSprite * 0.5, alturaSprite * 0.2);
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(telaX - 20, yTop - 12, 40, 6);
+                        ctx.fillStyle = '#0f0';
+                        ctx.fillRect(telaX - 20, yTop - 12, 40 * (s.hp / 100), 6);
+                    }
+                }
+            }
+
+            let recoil = efeitoTiro * 4;
+            if (efeitoTiro > 0) {
+                ctx.fillStyle = 'rgba(255, 220, 50, 0.8)';
+                ctx.beginPath();
+                ctx.arc(W / 2 + 90, H - 130 + recoil, 28, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.fillStyle = '#222';
+            ctx.fillRect(W / 2 + 70, H - 130 + recoil, 40, 140);
+            ctx.fillStyle = '#444';
+            ctx.fillRect(W / 2 + 78, H - 135 + recoil, 24, 140);
+
+            ctx.strokeStyle = '#0f0';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(W / 2 - 10, H / 2); ctx.lineTo(W / 2 + 10, H / 2);
+            ctx.moveTo(W / 2, H / 2 - 10); ctx.lineTo(W / 2, H / 2 + 10);
+            ctx.stroke();
+
+            const escalaMini = 10;
+            for (let y = 0; y < mapa.length; y++) {
+                for (let x = 0; x < mapa[y].length; x++) {
+                    ctx.fillStyle = mapa[y][x] === 1 ? '#555' : 'rgba(0,0,0,0.6)';
+                    ctx.fillRect(10 + x * escalaMini, 10 + y * escalaMini, escalaMini, escalaMini);
+                }
+            }
+            ctx.fillStyle = '#0f0';
+            ctx.fillRect(10 + jogador.x * escalaMini - 2, 10 + jogador.y * escalaMini - 2, 4, 4);
+        }
+
+        function loop() {
+            atualizar();
+            renderizar();
+            requestAnimationFrame(loop);
+        }
+        loop();
+    </script>
+</body>
+      </html>
+      
