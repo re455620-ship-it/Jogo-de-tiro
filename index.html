@@ -45,12 +45,24 @@ hr{border:0;border-top:1px solid #2c3550;width:100%;margin:2px 0}
 #lobby .teams{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
 #lobby .tm{background:#1a2030;border:1px solid #2c3550;border-radius:12px;padding:14px;min-width:210px;text-align:left;line-height:1.6}
 #lobby .big{font-size:40px;font-weight:800}
+html,body,canvas,#tc{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#mtag{position:absolute;top:12px;left:12px;font-size:13px;opacity:.85;text-shadow:0 1px 3px #000}
+#tc{position:fixed;inset:0;pointer-events:none;display:none;z-index:1}
+body.tc-on #tc{display:block}body.tc-on #wp{display:none}body.tc-on #hp{bottom:170px}
+#tc>*{pointer-events:auto}
+#joy{position:absolute;left:max(24px,env(safe-area-inset-left));bottom:24px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.3)}
+#knob{position:absolute;left:35px;top:35px;width:60px;height:60px;border-radius:50%;background:rgba(255,255,255,.45)}
+#tfire{position:absolute;right:max(24px,env(safe-area-inset-right));bottom:30px;width:96px;height:96px;border-radius:50%;background:rgba(224,69,69,.7);font-size:38px;padding:0}
+#tzoom{position:absolute;right:140px;bottom:50px;width:64px;height:64px;border-radius:50%;background:rgba(47,127,224,.65);font-size:26px;padding:0}
+#tw{position:absolute;right:16px;top:32%;display:flex;flex-direction:column;gap:6px}
+#tw button{width:46px;height:40px;padding:0;background:rgba(0,0,0,.5);font-size:16px}#tw button.sel{background:#ffd54a;color:#000}
+#tpause{position:absolute;left:16px;top:44px;width:44px;height:40px;padding:0;background:rgba(0,0,0,.5)}
 #ov{background:rgba(0,0,0,.75);display:none;cursor:pointer}
 #ov h2{margin:0;font-size:32px}
 #rot{display:none;position:fixed;inset:0;z-index:99;background:#000;color:#fff;align-items:center;justify-content:center;flex-direction:column;font-size:22px;gap:12px;text-align:center}
 @media (orientation:portrait){#rot{display:flex}}
 </style></head><body>
-<div id="hud"><div id="score"></div><div id="feed"></div><div id="cross"></div><div id="hp"></div><div id="msg"></div><div id="hit">✕</div><div id="flash"></div><div id="wp"></div><div id="hs"><div class="sk">💀</div>HEADSHOT</div></div>
+<div id="hud"><div id="score"></div><div id="feed"></div><div id="cross"></div><div id="hp"></div><div id="msg"></div><div id="mtag"></div><div id="hit">✕</div><div id="flash"></div><div id="wp"></div><div id="hs"><div class="sk">💀</div>HEADSHOT</div></div>
 
 <div id="home" class="scr">
  <h1>ARENA 6v6</h1><div class="sub">Tiro em primeira pessoa · 3D</div>
@@ -59,7 +71,7 @@ hr{border:0;border-top:1px solid #2c3550;width:100%;margin:2px 0}
   <button id="shopb" class="gray">🛒 Loja <span id="coins1"></span></button>
   <button id="off" class="alt">▶ Jogar contra bots (Enter)</button>
   <hr>
-  <label>Servidor (wss://...)<input id="ip" value="wss://rdsk-2.onrender.com/" autocomplete="off"></label>
+  <label>Servidor (wss://...)<input id="ip" value="wss://rdsk-mpu2.onrender.com/" autocomplete="off"></label>
   <label>Time<select id="tm"><option value="a">Automático</option><option value="b">Azul</option><option value="r">Vermelho</option></select></label>
   <button id="on">🌐 Entrar no multiplayer</button>
   <div id="st"></div>
@@ -70,6 +82,8 @@ hr{border:0;border-top:1px solid #2c3550;width:100%;margin:2px 0}
 <div id="shop" class="scr"><h1 style="margin:0">🛒 Loja</h1>
  <div class="top"><b id="coins2"></b><div class="tabs"><button data-t="w" class="on">Armas</button><button data-t="c">Cores (100)</button><button data-t="t">Texturas (200)</button></div><button id="shopx" class="gray">← Voltar</button></div>
  <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;width:100%"><canvas id="pv" width="140" height="220" style="background:#141a28;border-radius:10px"></canvas><div id="grid" class="grid"></div></div></div>
+<div id="tc"><div id="joy"><div id="knob"></div></div><button id="tfire">🔫</button><button id="tzoom">🔍</button>
+ <div id="tw"><button data-n="0">0</button><button data-n="1">1</button><button data-n="2">2</button><button data-n="3">3</button></div><button id="tpause">⏸</button></div>
 <div id="lobby" class="scr"><h1 style="margin:0">Sala de espera</h1><div class="teams" id="lbt"></div><div class="big" id="lbs"></div>
  <div class="help">Mínimo de 1 jogador em cada time e máximo de 3 por time (3v3). Vagas sem jogador viram bots. Com os dois times ocupados, a partida começa em 10s (se o 3v3 encher, começa em 3s). Depois que a partida começa, ninguém novo consegue entrar.</div>
  <button id="lbx" class="gray">Sair</button></div>
@@ -229,10 +243,10 @@ document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('button');i
 $('shopb').onclick=()=>{$('home').style.display='none';$('shop').style.display='flex';renderShop()};
 $('shopx').onclick=()=>{$('shop').style.display='none';$('home').style.display='flex';coinsUI()};
 coinsUI();
-try{$('ip').value=localStorage.getItem('arena_url')||$('ip').value}catch(e){}
+try{const sv=localStorage.getItem('arena_url');if(sv&&sv!='wss://rdsk-2.onrender.com/')$('ip').value=sv}catch(e){}
 function land(){try{if(matchMedia('(pointer:coarse)').matches)document.documentElement.requestFullscreen().then(()=>screen.orientation.lock('landscape')).catch(()=>{})}catch(e){}}
 function begin(m){mode=m;running=true;ready=false;spec=-1;over=null;$('home').style.display='none';paused=true;$('ov').style.display='flex'}
-function resume(){paused=false;$('ov').style.display='none';try{const r=ren.domElement.requestPointerLock();if(r&&r.catch)r.catch(()=>{nolock=true})}catch(e){nolock=true}}
+function resume(){paused=false;$('ov').style.display='none';if(TOUCH){nolock=true;return}try{const r=ren.domElement.requestPointerLock();if(r&&r.catch)r.catch(()=>{nolock=true})}catch(e){nolock=true}}
 function pause(){if(!running||paused||phase=='l')return;paused=true;down=false;rdown=false;$('ovt').textContent='Pausado';$('ov').style.display='flex'}
 function toHome(t){running=false;paused=true;mode=null;coinsUI();$('lobby').style.display='none';phase='m';got=false;if(ws){const w=ws;ws=null;w.onclose=null;w.close()}game=null;
  if(document.pointerLockElement)document.exitPointerLock();$('ov').style.display='none';$('home').style.display='flex';$('feed').innerHTML='';msg('');st(t||'');C.forEach(c=>c.g.visible=false)}
@@ -254,10 +268,26 @@ $('menu').onclick=e=>{e.stopPropagation();toHome()};
 $('ov').onclick=resume;
 document.addEventListener('pointerlockchange',()=>{if(document.pointerLockElement)nolock=false;else pause()});document.addEventListener('pointerlockerror',()=>{nolock=true});
 addEventListener('mousemove',e=>{if(paused||!running||(!document.pointerLockElement&&!nolock))return;const q=.0022*(cam.fov/75);yaw-=e.movementX*q;pitch=Math.max(-1.5,Math.min(1.5,pitch-e.movementY*q))});
-addEventListener('keydown',e=>{if(e.code=='Enter'||e.code=='NumpadEnter'){e.preventDefault();if(!running){if($('shop').style.display!='flex')$('off').click()}else if(paused&&phase!='l')resume();return}if(e.code=='Escape'&&running&&!paused&&nolock)pause();if(running&&!paused&&/^Digit[0-3]$/.test(e.code)){const n=+e.code[5],k=SAVE.eq.s[n];if(k){slot=n;curW=k;cd=.25}}keys[e.code]=1;if(running&&got&&!C[me].alive&&(e.code=='KeyQ'||e.code=='KeyE'))cycle()});
+addEventListener('keydown',e=>{if(e.code=='Enter'||e.code=='NumpadEnter'){e.preventDefault();if(!running){if($('shop').style.display!='flex'){const a=document.activeElement;if(a&&(a.id=='ip'||a.id=='tm'))$('on').click();else $('off').click()}}else if(paused&&phase!='l')resume();return}if(e.code=='Escape'&&running&&!paused&&nolock)pause();if(running&&!paused&&/^Digit[0-3]$/.test(e.code)){const n=+e.code[5],k=SAVE.eq.s[n];if(k){slot=n;curW=k;cd=.25}}keys[e.code]=1;if(running&&got&&!C[me].alive&&(e.code=='KeyQ'||e.code=='KeyE'))cycle()});
 addEventListener('keyup',e=>keys[e.code]=0);
 addEventListener('contextmenu',e=>e.preventDefault());addEventListener('mousedown',e=>{if(e.button==2){rdown=true;return}down=true;if(running&&got&&!C[me].alive&&!paused)cycle()});
 addEventListener('mouseup',e=>{if(e.button==2)rdown=false;else down=false});
+const TOUCH=matchMedia('(pointer:coarse)').matches||'ontouchstart' in window;
+let joyX=0,joyY=0;
+function pick(n){const k=SAVE.eq.s[n];if(k){slot=n;curW=k;cd=.25}}
+(function(){const NP={passive:false},joy=$('joy'),kn=$('knob'),cv=ren.domElement;let jid=null,cx=0,cy=0,lid=null,lx=0,ly=0;
+ const mv=t=>{let dx=t.clientX-cx,dy=t.clientY-cy;const L=Math.hypot(dx,dy),R=50;if(L>R){dx*=R/L;dy*=R/L}const m=Math.hypot(dx,dy)/R;joyX=m<.15?0:dx/R;joyY=m<.15?0:dy/R;kn.style.transform=`translate(${dx}px,${dy}px)`};
+ joy.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];jid=t.identifier;const r=joy.getBoundingClientRect();cx=r.left+r.width/2;cy=r.top+r.height/2;mv(t)},NP);
+ joy.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier==jid)mv(t)},NP);
+ const je=e=>{for(const t of e.changedTouches)if(t.identifier==jid){jid=null;joyX=joyY=0;kn.style.transform=''}};joy.addEventListener('touchend',je);joy.addEventListener('touchcancel',je);
+ cv.addEventListener('touchstart',e=>{e.preventDefault();if(running&&got&&!C[me].alive&&!paused)cycle();if(lid===null){const t=e.changedTouches[0];lid=t.identifier;lx=t.clientX;ly=t.clientY}},NP);
+ cv.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier==lid){if(running&&!paused){const q=.0045*(cam.fov/75);yaw-=(t.clientX-lx)*q;pitch=Math.max(-1.5,Math.min(1.5,pitch-(t.clientY-ly)*q))}lx=t.clientX;ly=t.clientY}},NP);
+ const le=e=>{for(const t of e.changedTouches)if(t.identifier==lid)lid=null};cv.addEventListener('touchend',le);cv.addEventListener('touchcancel',le);
+ const hold=(id,on,off)=>{const b=$(id);b.addEventListener('touchstart',e=>{e.preventDefault();on()},NP);const f=e=>{e.preventDefault();off()};b.addEventListener('touchend',f);b.addEventListener('touchcancel',f)};
+ hold('tfire',()=>down=true,()=>down=false);
+ $('tzoom').addEventListener('touchstart',e=>{e.preventDefault();rdown=!rdown},NP);
+ document.querySelectorAll('#tw button').forEach(b=>b.addEventListener('touchstart',e=>{e.preventDefault();pick(+b.dataset.n)},NP));
+ $('tpause').addEventListener('touchstart',e=>{e.preventDefault();pause()},NP)})();
 
 function headshot(){const h=$('hs');h.style.transition='none';h.style.opacity=1;h.offsetWidth;h.style.transition='opacity 1.2s ease-out .5s';h.style.opacity=0}
 function feed(e){const d=document.createElement('div');d.innerHTML=`<span class=${C[e.k].team}>${nm(e.k)}</span> <small>[${(WEAPONS[e.w]||WEAPONS.pistol).n}]</small> ${e.hs?'💀':'➜'} <span class=${C[e.v].team}>${nm(e.v)}</span>`;$('feed').prepend(d);setTimeout(()=>d.remove(),4000);while($('feed').children.length>5)$('feed').lastChild.remove()}
@@ -295,8 +325,8 @@ function loop(){requestAnimationFrame(loop);const dt=Math.min(clk.getDelta(),.05
   if(mode=='off'){if(lk)game.step(dt);syncOff();handle(game.ev);game.ev=[]}
   post(dt);const m=C[me];
   if(lk&&m.alive&&!over){yaw+=((keys.ArrowLeft?1:0)-(keys.ArrowRight?1:0))*2.2*dt;pitch=Math.max(-1.5,Math.min(1.5,pitch+((keys.ArrowUp?1:0)-(keys.ArrowDown?1:0))*1.5*dt));
-   const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0);
-   if(f||s){const dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,L=Math.hypot(dx,dz);P.x+=dx/L*7*dt;P.z+=dz/L*7*dt;push(P,.5)}
+   const f=Math.max(-1,Math.min(1,(keys.KeyW?1:0)-(keys.KeyS?1:0)-joyY)),s=Math.max(-1,Math.min(1,(keys.KeyD?1:0)-(keys.KeyA?1:0)+joyX));
+   if(f||s){const dx=-Math.sin(yaw)*f+Math.cos(yaw)*s,dz=-Math.cos(yaw)*f-Math.sin(yaw)*s,L=Math.hypot(dx,dz);const sp=Math.min(1,L);P.x+=dx/L*7*dt*sp;P.z+=dz/L*7*dt*sp;push(P,.5)}
    const fw=[-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch)],o=[P.x,1.6,P.z];let ba=curW=='knife'?0:.1;
    C.forEach(c=>{if(!c.alive||c.team==m.team)return;for(const y of[1,1.65]){const d=[c.rx-o[0],y-o[1],c.rz-o[2]],L=Math.hypot(d[0],d[1],d[2]);d[0]/=L;d[1]/=L;d[2]/=L;
     const a=Math.acos(Math.max(-1,Math.min(1,d[0]*fw[0]+d[1]*fw[1]+d[2]*fw[2])));if(a<(y>1.3?.025:.1)&&a<ba&&rayWalls(o,d,L)>=L){ba=a;lock=d}}});
@@ -314,6 +344,8 @@ function loop(){requestAnimationFrame(loop);const dt=Math.min(clk.getDelta(),.05
   const tf=(rdown&&curW=='sniper'&&m.alive)?28:75;if(Math.abs(cam.fov-tf)>.1){cam.fov+=(tf-cam.fov)*Math.min(1,dt*12);cam.updateProjectionMatrix()}
   msg(over?`<b class=${over}>${over=='b'?'AZUL':'VERMELHO'} VENCEU!</b><br><small>Nova partida em instantes</small>`:m.alive?'':`Você caiu! Renasce em ${Math.ceil(m.rt)}s<br><small>Assistindo ${spec>=0?nm(spec):''} · clique ou Q/E para trocar</small>`)}
  for(let i=tr.length-1;i>=0;i--){if((tr[i].t-=dt)<=0){scene.remove(tr[i].l);tr[i].l.geometry.dispose();tr[i].l.material.dispose();tr.splice(i,1)}}
+ document.body.classList.toggle('tc-on',TOUCH&&running&&!paused&&phase!='l');
+ if(running){$('mtag').textContent=mode=='on'?'🌐 ONLINE · '+C.filter(c=>c.human).length+' jogador(es)':'OFFLINE · contra bots';if(TOUCH)document.querySelectorAll('#tw button').forEach(b=>b.classList.toggle('sel',+b.dataset.n==slot))}else $('mtag').textContent='';
  ren.render(scene,cam)}
 loop();
 </script></body></html>
