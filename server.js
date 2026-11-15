@@ -1,11 +1,8 @@
 // Servidor do Arena 6v6 — rode com: node server.js
-// Sala de espera: máx. 3 jogadores por time. Com 1+ jogador em cada time, a partida começa em 10s
-// (se encher 3v3, começa em 3s). Vagas sem jogador viram bots. Com a partida em andamento, ninguém novo entra.
 const http=require('http'),fs=require('fs'),path=require('path');
 const {WebSocketServer}=require('ws');
 const {Game}=require('./game.js');
 const PORT=process.env.PORT||3000;
-const WAIT=10,WAIT_FULL=3;
 const files={'/':'index.html','/index.html':'index.html','/game.js':'game.js'};
 const server=http.createServer((q,r)=>{
   const f=files[q.url.split('?')[0]];
@@ -15,46 +12,47 @@ const server=http.createServer((q,r)=>{
 });
 const wss=new WebSocketServer({server});
 const game=new Game();
-let phase='lobby',cdn=-1;
+let phase='l',cd=-1; // 'l' = sala de espera | 'm' = partida em andamento
 game.frozen=true;
-game.onOver=()=>{phase='lobby';cdn=-1;game.frozen=true;game.reset();console.log('Partida terminou. Voltando para a sala de espera.')};
-const hc=t=>game.ents.filter(e=>e.human&&e.team===t).length;
-function tick(dt){
-  if(phase==='lobby'){
-    const b=hc('b'),r=hc('r');
-    if(b>0&&r>0){
-      if(cdn<0)cdn=WAIT;
-      cdn-=dt;
-      if(b>=3&&r>=3&&cdn>WAIT_FULL)cdn=WAIT_FULL;
-      if(cdn<=0){phase='match';cdn=-1;game.reset();game.frozen=false;console.log('Partida iniciada: '+b+'v'+r)}
-    }else cdn=-1;
-  }else if(hc('b')+hc('r')===0){
-    phase='lobby';cdn=-1;game.frozen=true;game.reset();console.log('Todos saíram. Sala resetada.');
-  }
-  game.step(dt);
-}
+const count=t=>game.ents.filter(e=>e.human&&e.team===t).length;
+function toLobby(){phase='l';cd=-1;game.frozen=true;game.reset();console.log('Sala de espera aberta')}
+function start(){phase='m';cd=-1;game.reset();game.frozen=false;console.log('Partida iniciada:',count('b')+'v'+count('r'))}
+game.onOver=toLobby; // fim da partida -> volta para a sala de espera
 wss.on('connection',ws=>{
   ws.id=-1;
   ws.on('message',m=>{
     try{
       const d=JSON.parse(m);
       if(d.t==='join'&&ws.id<0){
-        if(phase!=='lobby')return ws.send(JSON.stringify({t:'busy'}));
+        if(phase!=='l')return ws.send(JSON.stringify({t:'busy'}));   // partida já criada: ninguém entra
         const id=game.join(d.team,String(d.name||'Jogador').slice(0,14),d.skin);
         if(id<0)return ws.send(JSON.stringify({t:'full'}));
         ws.id=id;ws.send(JSON.stringify({t:'welcome',id}));
         console.log('Entrou:',game.ents[id].name,'time',game.ents[id].team);
-      }else if(ws.id>=0&&d.t==='p')game.setPos(ws.id,+d.x,+d.z,+d.y);
-      else if(ws.id>=0&&d.t==='f')game.shoot(ws.id,d.o,d.d,d.w);
+      }else if(ws.id>=0&&phase==='m'&&d.t==='p')game.setPos(ws.id,+d.x,+d.z,+d.y);
+      else if(ws.id>=0&&phase==='m'&&d.t==='f')game.shoot(ws.id,d.o,d.d,d.w);
     }catch(e){}
   });
-  ws.on('close',()=>{if(ws.id>=0){console.log('Saiu:',game.ents[ws.id].name);game.leave(ws.id)}});
+  ws.on('close',()=>{
+    if(ws.id>=0){console.log('Saiu:',game.ents[ws.id].name);game.leave(ws.id)}
+    if(phase==='m'&&!game.ents.some(e=>e.human))toLobby();
+  });
 });
 setInterval(()=>{
-  tick(1/30);
-  const sn=game.snapshot();sn.ph=phase==='lobby'?'l':'m';sn.c=cdn<0?-1:Math.ceil(cdn);
-  game.ev=[];
-  const s=JSON.stringify(sn);
+  const dt=1/30;
+  if(phase==='m')game.step(dt);
+  else{
+    const hb=count('b'),hr=count('r');
+    if(hb>=1&&hr>=1){
+      const want=(hb>=3&&hr>=3)?3:10;          // 3v3 cheio: 3s | senão: 10s
+      if(cd<0||cd>want)cd=want;
+      cd-=dt;if(cd<=0)start();
+    }else cd=-1;
+  }
+  const snap=game.snapshot();
+  snap.ph=phase;snap.c=cd>0?Math.ceil(cd):-1;
+  const s=JSON.stringify(snap);game.ev=[];
   wss.clients.forEach(c=>{if(c.readyState===1)c.send(s)});
 },1000/30);
-server.listen(PORT,'0.0.0.0',()=>console.log('Arena 6v6 rodando na porta '+PORT+'. Abra http://IP-DA-TV-BOX:'+PORT));
+server.listen(PORT,'0.0.0.0',()=>console.log('Arena 6v6 rodando na porta '+PORT+'. Abra http://IP-DO-SERVIDOR:'+PORT));
+module.exports={game};
